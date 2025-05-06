@@ -20,7 +20,7 @@ bedrock_client = None
 
 # モデルID
 #MODEL_ID = os.environ.get("MODEL_ID", "us.amazon.nova-lite-v1:0")
-ENDPOINT_URL = "https://a1db-34-125-224-167.ngrok-free.app"
+MODEL_ID = "https://a1db-34-125-224-167.ngrok-free.app"
 
 def lambda_handler(event, context):
     try:
@@ -101,7 +101,7 @@ def lambda_handler(event, context):
 
         print("Sending request to LLM endpoint...")
         req = urllib.request.Request(
-            ENDPOINT_URL,
+            MODEL_ID,
             data=json.dumps(payload).encode('utf-8'),
             headers={'Content-Type': 'application/json'}
         )
