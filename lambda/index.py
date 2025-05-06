@@ -24,14 +24,14 @@ MODEL_ID = "https://a1db-34-125-224-167.ngrok-free.app"
 
 def lambda_handler(event, context):
     try:
-        # コンテキストから実行リージョンを取得し、クライアントを初期化
-        global bedrock_client
-        if bedrock_client is None:
-            region = extract_region_from_arn(context.invoked_function_arn)
-            bedrock_client = boto3.client('bedrock-runtime', region_name=region)
-            print(f"Initialized Bedrock client in region: {region}")
+        # # コンテキストから実行リージョンを取得し、クライアントを初期化
+        # global bedrock_client
+        # if bedrock_client is None:
+        #     region = extract_region_from_arn(context.invoked_function_arn)
+        #     bedrock_client = boto3.client('bedrock-runtime', region_name=region)
+        #     print(f"Initialized Bedrock client in region: {region}")
         
-        print("Received event:", json.dumps(event))
+        # print("Received event:", json.dumps(event))
         
         # Cognitoで認証されたユーザー情報を取得
         user_info = None
@@ -56,20 +56,20 @@ def lambda_handler(event, context):
             "content": message
         })
         
-        # Nova Liteモデル用のリクエストペイロードを構築
-        # 会話履歴を含める
-        bedrock_messages = []
-        for msg in messages:
-            if msg["role"] == "user":
-                bedrock_messages.append({
-                    "role": "user",
-                    "content": [{"text": msg["content"]}]
-                })
-            elif msg["role"] == "assistant":
-                bedrock_messages.append({
-                    "role": "assistant", 
-                    "content": [{"text": msg["content"]}]
-                })
+        # # Nova Liteモデル用のリクエストペイロードを構築
+        # # 会話履歴を含める
+        # bedrock_messages = []
+        # for msg in messages:
+        #     if msg["role"] == "user":
+        #         bedrock_messages.append({
+        #             "role": "user",
+        #             "content": [{"text": msg["content"]}]
+        #         })
+        #     elif msg["role"] == "assistant":
+        #         bedrock_messages.append({
+        #             "role": "assistant", 
+        #             "content": [{"text": msg["content"]}]
+        #         })
         
         # invoke_model用のリクエストペイロード
         # request_payload = {
@@ -81,38 +81,66 @@ def lambda_handler(event, context):
         #         "topP": 0.9
         #     }
         # }
-        request_payload = {
-            "prompt": bedrock_messages,
-            "max_new_tokens": max_new_tokens,
-            "temperature": temperature,
-            "top_p": top_p,
-            "do_sample": do_sample
+
+        prompt_text = ""
+        for msg in messages:
+            if msg["role"] == "user":
+                prompt_text += f"ユーザー: {msg['content']}\n"
+            elif msg["role"] == "assistant":
+                prompt_text += f"アシスタント: {msg['content']}\n"
+        prompt_text += "アシスタント: "
+
+        # 自前LLMへのリクエスト構築
+        payload = {
+            "prompt": prompt_text,
+            "max_new_tokens": 512,
+            "temperature": 0.7,
+            "top_p": 0.9,
+            "do_sample": True
         }
-        print("Calling Bedrock invoke_model API with payload:", json.dumps(request_payload))
-        
-        # invoke_model APIを呼び出し
-        response = bedrock_client.invoke_model(
-            modelId=MODEL_ID,
-            body=json.dumps(request_payload),
-            contentType="application/json"
+
+        print("Sending request to LLM endpoint...")
+        req = urllib.request.Request(
+            ENDPOINT_URL,
+            data=json.dumps(payload).encode('utf-8'),
+            headers={'Content-Type': 'application/json'}
         )
+
+        with urllib.request.urlopen(req) as res:
+            res_body = res.read()
+            response_data = json.loads(res_body)
+            print("LLM response:", json.dumps(response_data))
+
+        # レスポンス取得（generated_text を使用）
+        assistant_response = response_data.get("generated_text", "").strip()
+
+        messages.append({"role": "assistant", "content": assistant_response})
+
+        # print("Calling Bedrock invoke_model API with payload:", json.dumps(request_payload))
         
-        # レスポンスを解析
-        response_body = json.loads(response['body'].read())
-        print("Bedrock response:", json.dumps(response_body, default=str))
+        # # invoke_model APIを呼び出し
+        # response = bedrock_client.invoke_model(
+        #     modelId=MODEL_ID,
+        #     body=json.dumps(request_payload),
+        #     contentType="application/json"
+        # )
         
-        # 応答の検証
-        if not response_body.get('output') or not response_body['output'].get('message') or not response_body['output']['message'].get('content'):
-            raise Exception("No response content from the model")
+        # # レスポンスを解析
+        # response_body = json.loads(response['body'].read())
+        # print("Bedrock response:", json.dumps(response_body, default=str))
         
-        # アシスタントの応答を取得
-        assistant_response = response_body['output']['message']['content'][0]['text']
+        # # 応答の検証
+        # if not response_body.get('output') or not response_body['output'].get('message') or not response_body['output']['message'].get('content'):
+        #     raise Exception("No response content from the model")
         
-        # アシスタントの応答を会話履歴に追加
-        messages.append({
-            "role": "assistant",
-            "content": assistant_response
-        })
+        # # アシスタントの応答を取得
+        # assistant_response = response_body['output']['message']['content'][0]['text']
+        
+        # # アシスタントの応答を会話履歴に追加
+        # messages.append({
+        #     "role": "assistant",
+        #     "content": assistant_response
+        # })
         
         # 成功レスポンスの返却
         return {
